@@ -1,0 +1,394 @@
+import json
+import os
+import random
+from datetime import datetime
+
+
+class JsonOperation:
+    def __init__(self, file):
+        self.filename = file + ".json"
+
+    def check_json(self):
+        if not os.path.exists(self.filename):
+            with open(self.filename, 'w') as f:
+                json.dump([], f, indent=4)
+        else:
+            with open(self.filename) as ff:
+                db = ff.read()
+            if db.strip() == "":
+                with open(self.filename, 'w') as fff:
+                    json.dump([], fff, indent=4)
+
+    def load_json(self):
+        self.check_json()
+        with open(self.filename) as f:
+            return json.load(f)
+
+    def write_2_json(self, info):
+        db = self.load_json()
+        db.append(info)
+        with open(self.filename, 'w') as ff:
+            json.dump(db, ff, indent=4)
+
+    def update_json(self, db):
+        with open(self.filename, 'w') as f:
+            json.dump(db, f, indent=4)
+
+
+class Check(JsonOperation):
+    def check_username(self, username):
+        db = self.load_json()
+        if username.strip() == "":
+            return None
+        for u in db:
+            if u["Username"] == username:
+                return False
+        return True
+
+    def check_password(self, password):
+        errors = []
+        lo = False
+        up = False
+        di = False
+        for i in password:
+            if i.islower():
+                lo = True
+            if i.isupper():
+                up = True
+            if i.isdigit():
+                di = True
+        if not lo:
+            errors.append("PASSWORD MUST HAVE a - z!")
+        if not up:
+            errors.append("PASSWORD MUST HAVE A - Z!")
+        if not di:
+            errors.append("PASSWORD MUST HAVE 0 - 9!")
+        if len(password) < 6:
+            errors.append("PASSWORD MUST BIGGER THAN 6!")
+        if len(errors) == 0:
+            return True, True
+        else:
+            return False, errors
+
+    def generate_id(self):
+        db = self.load_json()
+        user_id = random.randint(100000, 999999)
+        i = 0
+        while i < len(db):
+            if db[i]["ID"] == user_id:
+                user_id = random.randint(100000, 999999)
+                i = -1
+            i += 1
+        return user_id
+
+
+class Register(Check):
+    def __init__(self, file):
+        super().__init__(file)
+
+    def process(self):
+        while True:
+            username = input("Enter username : ")
+            r = self.check_username(username)
+            if r:
+                break
+            elif r is None:
+                print("THIS FIELD MUST BE COMPLETE!")
+            elif r is False:
+                print("USERNAME MUST BE UNIQUE!")
+
+        while True:
+            email = input("Enter Email : ").strip()
+            if email == "":
+                print("EMAIL MUST BE COMPLETE!")
+                continue
+
+            if "@" not in email or "." not in email:
+                print("INVALID EMAIL FORMAT!")
+                continue
+            at_index = email.index("@")
+            dot_index = email.rfind(".")
+            if at_index < 1 or dot_index >= len(email) - 2:
+                print("INVALID EMAIL FORMAT!")
+                continue
+
+            db = self.load_json()
+            email_exists = False
+            for u in db:
+                if u["Email"] == email:
+                    email_exists = True
+                    break
+
+            if email_exists:
+                print("EMAIL MUST BE UNIQUE!")
+                continue
+
+            break
+
+        while True:
+            password = input("Enter Password : ")
+            res, errors = self.check_password(password)
+            if res:
+                break
+            else:
+                for e in errors:
+                    print(e)
+
+        current_year = datetime.now().year
+        while True:
+            try:
+                birth_year = int(input("Enter birth year (e.g. 2001): "))
+                age = current_year - birth_year
+                if 18 <= age <= 50:
+                    break
+                else:
+                    print("Age must be between 18 and 50. Please contact office.")
+                    return
+            except ValueError:
+                print("Please enter a valid year.")
+
+        sec_q1 = "Who is the creator of Python language?"
+        sec_q2 = "Which keyword defines a function in Python?"
+
+        attempts_q1 = 3
+        ans1 = None
+        while attempts_q1 > 0:
+            answer = input(f"{sec_q1} ").strip()
+            if answer == "":
+                attempts_q1 -= 1
+                print(f"Answer cannot be empty. Attempts left: {attempts_q1}")
+            else:
+                ans1 = answer
+                break
+        if ans1 is None:
+            print("Failed to set security question 1. Registration cancelled.")
+            return
+
+        attempts_q2 = 3
+        ans2 = None
+        while attempts_q2 > 0:
+            answer = input(f"{sec_q2} ").strip()
+            if answer == "":
+                attempts_q2 -= 1
+                print(f"Answer cannot be empty. Attempts left: {attempts_q2}")
+            else:
+                ans2 = answer
+                break
+        if ans2 is None:
+            print("Failed to set security question 2. Registration cancelled.")
+            return
+
+        info = {
+            "ID": self.generate_id(),
+            "Username": username,
+            "Email": email,
+            "Password": password,
+            "BirthYear": birth_year,
+            "SecurityQuestions": [
+                {"Question": sec_q1, "Answer": ans1},
+                {"Question": sec_q2, "Answer": ans2}
+            ]
+        }
+        self.write_2_json(info)
+        print("Registration successful!")
+
+
+
+class Login(Check):
+    def __init__(self, file):
+        super().__init__(file)
+
+    def reset_password(self, username):
+        db = self.load_json()
+        for u in db:
+            if u["Username"] == username:
+                if "SecurityQuestions" not in u or not u["SecurityQuestions"]:
+                    print("No security questions set for this user.")
+                    return
+                for sq in u["SecurityQuestions"]:
+                    ans = input(f"{sq['Question']} ").strip()
+                    if ans.lower() != sq["Answer"].lower():
+                        print("Incorrect answer to security question.")
+                        return
+
+                while True:
+                    new_password = input("Enter new password: ")
+                    res, errors = self.check_password(new_password)
+                    if res:
+                        u["Password"] = new_password
+                        self.update_json(db)
+                        print("Password updated. Please login again.")
+                        return
+                    else:
+                        for e in errors:
+                            print(e)
+                return
+        print("User not found.")
+
+    def process(self):
+        db = self.load_json()
+        username = input("Enter username : ")
+        user = None
+        for u in db:
+            if u["Username"] == username:
+                user = u
+                break
+
+        if not user:
+            print("Username not found.")
+            return
+
+        attempts = 3
+        while attempts > 0:
+            password = input("Enter password (or type 'forgot'): ")
+            if password.lower() == "forgot":
+                self.reset_password(username)
+                return
+            if password == user["Password"]:
+                print("Login successful!")
+                self.user_menu(user)
+                return
+            attempts -= 1
+            print(f"Wrong password. Attempts left: {attempts}")
+
+        print("Too many failed attempts. Starting password reset...")
+        self.reset_password(username)
+
+    def user_menu(self, user):
+        while True:
+            print("\nWelcome,", user["Username"])
+            print("1. Request to register in a course (with quiz)")
+            print("2. Logout")
+            choice = input("Choose : ")
+            if choice == "1":
+                CourseSystem("courses").enroll(user)
+            elif choice == "2":
+                print("Logged out.")
+                break
+            else:
+                print("Invalid choice.")
+
+
+class CourseSystem(JsonOperation):
+    def show_courses(self):
+        db = self.load_json()
+        if not db:
+            print("No courses available yet.")
+            return
+
+        i = 1
+        for c in db:
+            print(f"{i}. {c['CourseName']} (Capacity left: {c['Capacity'] - len(c['Students'])})")
+            i += 1
+
+    def enroll(self, user):
+        db = self.load_json()
+        if not db:
+            print("No courses to enroll.")
+            return
+        self.show_courses()
+        choice = input("Choose course number: ")
+        try:
+            course = db[int(choice) - 1]
+        except:
+            print("Invalid choice.")
+            return
+
+        if len(course["Students"]) >= course["Capacity"]:
+            print("Course is full!")
+            return
+
+        already_registered = False
+        for s in course["Students"]:
+            if s["ID"] == user["ID"]:
+                already_registered = True
+                break
+
+        if already_registered:
+            print("You already registered in this course.")
+            return
+
+        try:
+            start_date = input("Enter start date (YYYY-MM-DD): ")
+            start_date_obj = datetime.strptime(start_date, "%Y-%m-%d").date()
+            if start_date_obj < datetime.today().date():
+                print("Start date cannot be in the past.")
+                return
+        except ValueError:
+            print("Invalid date format.")
+            return
+
+        course["Students"].append({
+            "ID": user["ID"],
+            "Username": user["Username"],
+            "Email": user["Email"],
+            "StartDate": start_date
+        })
+        self.update_json(db)
+        print(f"You registered in {course['CourseName']} successfully! Start date: {start_date}")
+
+        quiz_system = QuizSystem("quiz")
+        quiz_system.start_quiz(course["CourseName"], user, "users_json")
+
+
+class QuizSystem(JsonOperation):
+    def __init__(self, file):
+        super().__init__(file)
+
+    def start_quiz(self, course_name, user, users_file):
+        quizzes = self.load_json()
+        if course_name not in quizzes or not quizzes[course_name]:
+            print("No quiz available for this course.")
+            return
+
+        questions = quizzes[course_name]
+        correct = 0
+
+        i = 1
+        for q in questions:
+            print(f"\nQ{i}: {q['Question']}")
+            for opt in q["Options"]:
+                print(opt)
+            ans = input("Your answer (A/B/C/D): ").strip().upper()
+            if ans == q["Answer"]:
+                correct += 1
+            i += 1
+
+        if len(questions) == 0:
+            print("No questions found in quiz.")
+            return
+
+        score = (correct / len(questions)) * 100
+        result = "Pass" if score >= 40 else "Fail"
+
+        print(f"\nQuiz finished! You scored {score:.2f}%. Result: {result}")
+
+        db = JsonOperation(users_file).load_json()
+        for u in db:
+            if u["ID"] == user["ID"]:
+                u["QuizResult"] = result
+                u["QuizScore"] = score
+        JsonOperation(users_file).update_json(db)
+
+
+def main():
+    USERS_FILE = "users_json"
+    while True:
+        print("\n--- Main Menu ---")
+        print("1. Register")
+        print("2. Login")
+        print("3. Exit")
+        choice = input("Choose : ")
+        if choice == "1":
+            Register(USERS_FILE).process()
+        elif choice == "2":
+            Login(USERS_FILE).process()
+        elif choice == "3":
+            print("Goodbye!")
+            break
+        else:
+            print("Invalid option.")
+
+
+if __name__ == "__main__":
+    main()
